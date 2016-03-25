@@ -18,6 +18,12 @@ var SESSIONS = [];
 var CURRENT_SESSION_ID = null;
 var REPL_SERVER = null;
 
+var BINARY_ANSWERS = {
+	'true': true, 'false': false,
+	'yes': true, 'no': false,
+	'on': true, 'off': false
+}
+
 function newSessionObject(globalId) {
 	return {id: globalId};
 }
@@ -144,6 +150,25 @@ function startRepl() {
 			});
 		}
 	});
+	
+	REPL_SERVER.defineCommand('trace', {
+		help: 'Enable or disable trace mode',
+		action: function(arg) {
+			if (!BINARY_ANSWERS.hasOwnProperty(arg)) {
+				console.error('Wrong argument value expected one of: '+Object.keys(BINARY_ANSWERS).join(', '));
+				resumePrompt();
+				return;
+			}
+			
+			connection.call('setTrace', {trace:BINARY_ANSWERS[arg]}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+
+				resumePrompt();
+			});
+		}
+	})
 }
 
 openSesion(function(err,id) {
