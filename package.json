@@ -1,0 +1,7 @@
+{
+	"name": "sm-dbg-cli-js",
+	"description": "Command-line interface for smartactors debugger.",
+	"version": "0.0.1",
+	"dependencies": {
+	}
+}
