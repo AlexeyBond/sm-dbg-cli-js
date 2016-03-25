@@ -64,6 +64,28 @@ function closeSession(localId, callback) {
 	});
 }
 
+function stringifyJavaException(e) {
+	while (e.cause) {
+		e = e.cause;
+	}
+
+	return 'Server error: '+(e.detailMessage || e.message || 'unknown error');
+}
+
+function callSessionCommand(command, args, callback) {
+	args['debugSessionId'] = SESSIONS[CURRENT_SESSION_ID].id;
+
+	connection.call(command, args, function(err,res) {
+		if (err) {
+			callback(err);
+		} else if (res['exception']) {
+			callback(new Error(stringifyJavaException(res['exception'])));
+		} else {
+			callback(null, res);
+		}
+	});
+}
+
 function formPrompt() {
 	return 'SMDBG@'+connection.prompt+'['+CURRENT_SESSION_ID+']('+SESSIONS[CURRENT_SESSION_ID].id.slice(0,8)+')>';
 }
@@ -160,7 +182,7 @@ function startRepl() {
 				return;
 			}
 			
-			connection.call('setTrace', {trace:BINARY_ANSWERS[arg]}, function(err) {
+			callSessionCommand('setTrace', {trace:BINARY_ANSWERS[arg]}, function(err) {
 				if (err) {
 					console.error(err);
 				}
@@ -168,7 +190,35 @@ function startRepl() {
 				resumePrompt();
 			});
 		}
-	})
+	});
+
+	REPL_SERVER.defineCommand('go', {
+		help: 'Start/continue/step message map execution.',
+		action: function() {
+			callSessionCommand('go', {}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+
+				resumePrompt();
+			});
+		}
+	});
+	
+	REPL_SERVER.defineCommand('stat', {
+		help: 'Query and print session state.',
+		action: function() {
+			connection.call('getState', {debugSessionId: SESSIONS[CURRENT_SESSION_ID].id}, function(err, res) {
+				if (err) {
+					console.error(err);
+				} else {
+					console.log(res);
+				}
+
+				resumePrompt();
+			});
+		}
+	});
 }
 
 openSesion(function(err,id) {
