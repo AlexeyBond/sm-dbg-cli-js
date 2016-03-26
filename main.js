@@ -1,5 +1,6 @@
 #!/usr/bin/env nodejs
 
+var path = require('path');
 var repl = require('repl');
 var cliArgs = require('optimist').argv;
 var connection = require('./lib/connection')(cliArgs);
@@ -13,6 +14,8 @@ function checkResponseErrors(res, callback) {
 	return true;
 }
 
+var SHOW_ASPECTS = require('./lib/shows');
+
 var SESSION_LOCAL_IDS = {};
 var SESSIONS = [];
 var CURRENT_SESSION_ID = null;
@@ -22,23 +25,28 @@ var BINARY_ANSWERS = {
 	'true': true, 'false': false,
 	'yes': true, 'no': false,
 	'on': true, 'off': false
-}
+};
 
 function newSessionObject(globalId) {
-	return {id: globalId};
+	return {id: globalId, watches:[]};
+}
+
+function currentSession() {
+	return SESSIONS[CURRENT_SESSION_ID];
 }
 
 function openSesion(callback) {
 	connection.call('openSession', {}, function(err, res) {
 		if (err) {
-			callback(err);
+			return callback(err);
 		}
 		
 		if (checkResponseErrors(res, callback)) {
 			var sid = res['debugSessionId'];
 			var localId = SESSIONS.length;
 			SESSIONS.push(newSessionObject(sid));
-			console.log('New session: '+sid+' local id = '+localId)
+			SESSION_LOCAL_IDS[sid] = localId;
+			console.log('New session: '+sid+' local id = '+localId);
 			callback(null, localId);
 		}
 	});
@@ -69,6 +77,10 @@ function stringifyJavaException(e) {
 		e = e.cause;
 	}
 
+	if (!e.detailMessage) {
+		console.error(e);
+	}
+
 	return 'Server error: '+(e.detailMessage || e.message || 'unknown error');
 }
 
@@ -91,7 +103,7 @@ function formPrompt() {
 }
 
 function resumePrompt() {
-	REPL_SERVER.displayPrompt();
+	REPL_SERVER.displayPrompt(true);
 }
 
 function goToSession(id) {
@@ -107,16 +119,42 @@ function goToSession(id) {
 	resumePrompt();
 }
 
+function setupREPLContext(context) {
+	context['message'] = function message(msg_, address_) {
+		if (msg_ && address_) {
+			callSessionCommand('setMessageContent', {
+				messageContent: msg_,
+				messageTarget: address_
+			}, function (err, res) {
+				if (err) {
+					console.error(err);
+				}
+
+				resumePrompt();
+			});
+		} else {
+			return {
+				to: function (address) {
+					return message(msg_, address);
+				},
+				of: function (msg) {
+					return message(msg, address_)
+				}
+			}
+		}
+	};
+}
+
 function startRepl() {
 	REPL_SERVER = repl.start({
 		prompt: formPrompt(),
 		useColors: true,
-		replMode: repl.REPL_MODE_STRICT
+		replMode: repl.REPL_MODE_STRICT,
+		ignoreUndefined: true
 	});
-	
-	REPL_SERVER.on('reset', function(context) {
-		
-	});
+
+	setupREPLContext(REPL_SERVER.context);
+	REPL_SERVER.on('reset', setupREPLContext);
 	
 	REPL_SERVER.defineCommand('session', {
 		help: 'Switch to another session or create new one',
@@ -204,6 +242,44 @@ function startRepl() {
 			});
 		}
 	});
+
+	REPL_SERVER.defineCommand('watch', {
+		help: 'Add a "watch" expression.',
+		action: function (expr) {
+			try {
+				currentSession().watches.push({
+					source: expr,
+					func: new Function('$', '{return ' + expr + ';}')
+				});
+			} catch (e) {
+				console.error('Error creating watch expression:');
+				console.error(e);
+			}
+
+			resumePrompt();
+		}
+	});
+
+	REPL_SERVER.defineCommand('show', {
+		help: 'Query and show some aspects of the debug session.',
+		action: function (arg) {
+			if (!SHOW_ASPECTS.hasOwnProperty(arg)) {
+				console.log('Wrong .show argument. Use ".show help" to see available.');
+				resumePrompt();
+				return;
+			}
+
+			connection.call('getState', {debugSessionId: SESSIONS[CURRENT_SESSION_ID].id}, function(err, res) {
+				if (err) {
+					console.error(err);
+				} else {
+					SHOW_ASPECTS[arg].action(currentSession(), res);
+				}
+
+				resumePrompt();
+			});
+		}
+	});
 	
 	REPL_SERVER.defineCommand('stat', {
 		help: 'Query and print session state.',
@@ -219,6 +295,12 @@ function startRepl() {
 			});
 		}
 	});
+
+	try {
+		require('repl.history')(REPL_SERVER, path.join(process.env['HOME'], '.sm-dbg-cli-js-history'));
+	} catch (e) {
+		console.warn('History initialization failed: ', e);
+	}
 }
 
 openSesion(function(err,id) {
