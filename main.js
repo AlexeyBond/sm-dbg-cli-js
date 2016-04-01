@@ -28,7 +28,7 @@ var BINARY_ANSWERS = {
 };
 
 function newSessionObject(globalId) {
-	return {id: globalId, watches:[]};
+	return {id: globalId, watches:[], bpCounter: 1, trCounter: 1};
 }
 
 function currentSession() {
@@ -143,6 +143,75 @@ function setupREPLContext(context) {
 			}
 		}
 	};
+	
+	context['breakAt'] = function breakAt(position, options, name) {
+		name = name || ('string' == typeof options && options) || ('bp'+(currentSession().bpCounter++));
+		options = ('object' == typeof options && options) || {};
+		callSessionCommand('newBreakpoint', {
+			'breakAfter': options.hasOwnProperty('after')?options['after']:false,
+			'breakBefore': options.hasOwnProperty('before')?options['before']:true,
+			'active': options.hasOwnProperty('active')?options['active']:true,
+			'breakpointMode': 'point',
+			'targetId': (position-1),
+			'breakpointId': name
+		}, function(err, res) {
+			if (err) {
+				console.error(err);
+			} else {
+				console.log('Breakpoint', res['breakpointId'], 'created.')
+			}
+			
+			resumePrompt();
+		});
+	};
+	
+	context['setTrace'] = function setTrace(name) {
+		name = name || ('tr'+(currentSession().trCounter++));
+		callSessionCommand('newBreakpoint', {
+			'breakAfter': false,
+			'breakBefore': true,
+			'active': true,
+			'breakpointMode': 'trace',
+			'breakpointId': name
+		}, function(err, res) {
+			if (err) {
+				console.error(err);
+			} else {
+				console.log('Trace', res['breakpointId'], 'created.')
+			}
+			
+			resumePrompt();
+		});
+	};
+	
+	context['doBreak'] = function doBreak(name, reallyDo) {
+		reallyDo = (reallyDo == undefined)?true:reallyDo;
+		callSessionCommand('modifyBreakpoint', {
+			'breakpointId': name,
+			'breakAfter': false, // TODO: Remove when server will handle correct
+			'breakBefore': true, // TODO: --//--
+			'active': reallyDo
+		}, function(err, res) {
+			if (err) {
+				console.error(err);
+			}
+			
+			resumePrompt();
+		});
+	};
+	
+	context['addTarget'] = function addTarget(id, target) {
+		callSessionCommand('addMapTarget', {
+			'targetId': id,
+			'messageTarget': target
+		}, function(err, res) {
+			if (err) {
+				console.error(err);
+			}
+			
+			resumePrompt();
+		});
+	}
 }
 
 function startRepl() {
@@ -179,6 +248,67 @@ function startRepl() {
 				
 				goToSession(id);
 			}
+		}
+	});
+	
+	REPL_SERVER.defineCommand('goto', {
+		help: 'Move to a target in message map',
+		action: function(arg) {
+			var targetId;
+			
+			try {
+				targetId = parseInt(arg);
+			} catch (e) {
+				console.error('Target id must be an integer.');
+				resumePrompt();
+				return;
+			}
+			
+			callSessionCommand('goTo', {
+				'targetId': targetId
+			}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+				
+				resumePrompt();
+			});
+		}
+	});
+	
+	REPL_SERVER.defineCommand('addtarget', {
+		help: 'Add a target after current poition in message map',
+		action: function(arg) {
+			try {
+				var target = eval('('+arg+')');
+			} catch (e) {
+				console.error(e.stack);
+				resumePrompt();
+				return;
+			}
+			
+			callSessionCommand('addMapTarget', {
+				'messageTarget': target
+			}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+				
+				resumePrompt();
+			});
+		}
+	});
+	
+	REPL_SERVER.defineCommand('rmtarget', {
+		help: 'Remove a target after current poition in message map',
+		action: function() {
+			callSessionCommand('removeMapTarget', {}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+				
+				resumePrompt();
+			});
 		}
 	});
 	
