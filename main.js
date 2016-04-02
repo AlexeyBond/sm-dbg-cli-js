@@ -188,8 +188,6 @@ function setupREPLContext(context) {
 		reallyDo = (reallyDo == undefined)?true:reallyDo;
 		callSessionCommand('modifyBreakpoint', {
 			'breakpointId': name,
-			'breakAfter': false, // TODO: Remove when server will handle correct
-			'breakBefore': true, // TODO: --//--
 			'active': reallyDo
 		}, function(err, res) {
 			if (err) {
