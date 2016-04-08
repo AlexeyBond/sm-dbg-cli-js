@@ -423,6 +423,19 @@ function startRepl() {
 			});
 		}
 	});
+	
+	REPL_SERVER.defineCommand('dump', {
+		help: 'Create a dump of message.',
+		action: function() {
+			callSessionCommand('makeDump', {}, function(err) {
+				if (err) {
+					console.error(err);
+				}
+				
+				resumePrompt();
+			})
+		}
+	})
 
 	try {
 		require('repl.history')(REPL_SERVER, path.join(process.env['HOME'], '.sm-dbg-cli-js-history'));
