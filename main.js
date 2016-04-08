@@ -18,6 +18,7 @@ var SHOW_ASPECTS = require('./lib/shows');
 
 var SESSION_LOCAL_IDS = {};
 var SESSIONS = [];
+var REMOTE_UNCONNECTED_SESSION_IDS = [];
 var CURRENT_SESSION_ID = null;
 var REPL_SERVER = null;
 
@@ -29,6 +30,13 @@ var BINARY_ANSWERS = {
 
 function newSessionObject(globalId) {
 	return {id: globalId, watches:[], bpCounter: 1, trCounter: 1};
+}
+
+function pushSession(sessionObject) {
+	var localId = SESSIONS.length;
+	SESSIONS.push(sessionObject);
+	SESSION_LOCAL_IDS[sessionObject.id] = localId;
+	return localId;
 }
 
 function currentSession() {
@@ -43,9 +51,7 @@ function openSesion(callback) {
 		
 		if (checkResponseErrors(res, callback)) {
 			var sid = res['debugSessionId'];
-			var localId = SESSIONS.length;
-			SESSIONS.push(newSessionObject(sid));
-			SESSION_LOCAL_IDS[sid] = localId;
+			var localId = pushSession(newSessionObject(sid));
 			console.log('New session: '+sid+' local id = '+localId);
 			callback(null, localId);
 		}
@@ -434,6 +440,61 @@ function startRepl() {
 				
 				resumePrompt();
 			})
+		}
+	});
+	
+	REPL_SERVER.defineCommand('listSessions', {
+		help: 'Get list of debugger sessions exist on server.',
+		action: function() {
+			connection.call('listSessions', {}, function(err, res) {
+				if (err) {
+					console.error(err);
+				} else {
+					var sessions = res['sessionsList'], i;
+					var remoteIds = [];
+					console.log('There is',sessions.length,'session(s).');
+					for (i = 0; i < sessions.length; ++i) {
+						var localId = SESSION_LOCAL_IDS[sessions[i]];
+						if (localId != undefined) {
+							console.log('\t', sessions[i], ' (connected, '+localId+')');
+						} else {
+							console.log(''+remoteIds.length+')\t', sessions[i]);
+							remoteIds.push(sessions[i]);
+						}
+					}
+					REMOTE_UNCONNECTED_SESSION_IDS = remoteIds;
+				}
+				
+				resumePrompt();
+			});
+		}
+	});
+	
+	REPL_SERVER.defineCommand('connect', {
+		help: 'Connect to remote session (use ".listSessions" to get list of unconnected sessions).',
+		action: function(arg) {
+			var localRemoteId;
+			
+			try {
+				localRemoteId = parseInt(arg);
+			} catch (e) {
+				console.error('Session id should be an integer (the index printed by ".listSessions").');
+				return resumePrompt();
+			}
+			
+			if (REMOTE_UNCONNECTED_SESSION_IDS.length <= localRemoteId || localRemoteId < 0 || REMOTE_UNCONNECTED_SESSION_IDS[localRemoteId] == undefined) {
+				console.error('There is no session with given id.');
+				console.log(REMOTE_UNCONNECTED_SESSION_IDS);
+				return resumePrompt();
+			}
+			
+			var globalId = REMOTE_UNCONNECTED_SESSION_IDS[localRemoteId];
+			var localId = pushSession(newSessionObject(globalId));
+			REMOTE_UNCONNECTED_SESSION_IDS[localRemoteId] = null;
+			
+			goToSession(localId);
+			console.log('Connected to remote session', '#'+globalId, 'as local session', localId);
+			resumePrompt();
 		}
 	})
 
