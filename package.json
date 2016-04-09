@@ -1,7 +1,16 @@
 {
   "name": "sm-dbg-cli-js",
   "description": "Command-line interface for smartactors debugger.",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "license": "UNLICENCED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AlexeyBond/sm-dbg-cli-js.git"
+  },
+  "engines": {
+    "node": ">=0.10.37"
+  },
+  "preferGlobal": true,
   "dependencies": {
     "optimist": "^0.6.1"
   },
